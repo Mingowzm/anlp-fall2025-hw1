@@ -50,18 +50,21 @@ class LlamaDataset(Dataset):
 		encoding = [self.tokenizer.encode(s, bos=True, eos=self.eos) for s in sents]
 		max_length_in_batch = max([len(sentence) for sentence in encoding])
 		encoding_padded = [sentence + [self.tokenizer.pad_id] * (max_length_in_batch - len(sentence)) for sentence in encoding]
+		attention_mask = [[1] * len(sentence) + [0] * (max_length_in_batch - len(sentence)) for sentence in encoding]
+		attention_mask = torch.LongTensor(attention_mask)
 		token_ids = torch.LongTensor(encoding_padded)
 		labels = torch.LongTensor(labels)
 
-		return token_ids, labels, sents
+		return token_ids, labels, sents, attention_mask
 
 	def collate_fn(self, all_data):
 
-		token_ids, labels, sents = self.pad_data(all_data)
+		token_ids, labels, sents, attn_mask = self.pad_data(all_data)
 		batched_data = {
 				'token_ids': token_ids,
 				'labels': labels,
 				'sents': sents,
+    			'attention_mask': attn_mask,
 			}
 
 		return batched_data
@@ -103,7 +106,11 @@ def model_eval(dataloader, model, device):
 
 		b_ids = b_ids.to(device)
 
-		logits = model(b_ids)
+		if args.use_attn_mask:
+			logits = model(b_ids, attention_mask=batch['attention_mask'].to(device))
+		else:
+			logits = model(b_ids)
+
 		logits = logits.detach().cpu().numpy()
 		preds = np.argmax(logits, axis=1).flatten()
 
@@ -195,7 +202,10 @@ def train(args):
 			b_labels = b_labels.to(device)
 
 			optimizer.zero_grad()
-			logits = model(b_ids)
+			if args.use_attn_mask:
+				logits = model(b_ids, attention_mask=batch['attention_mask'].to(device))
+			else:
+				logits = model(b_ids)
 			loss = F.nll_loss(logits, b_labels.view(-1), reduction='sum') / args.batch_size
 
 			loss.backward()
@@ -275,7 +285,10 @@ def train_lora(args):
 			b_labels = b_labels.to(device)
 
 			optimizer.zero_grad()
-			logits = model(b_ids)
+			if args.use_attn_mask:
+				logits = model(b_ids, attention_mask=batch['attention_mask'].to(device))
+			else:
+				logits = model(b_ids)
 			loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
 
 			loss.backward()
@@ -327,11 +340,17 @@ def write_predictions_to_file(split: str, outfile: str, acc: float, pred: list[s
 			f.write(f"{p} ||| {s}\n")
 
 def test_with_prompting(args):
-	assert args.dev_out.endswith("dev-prompting-output.txt"), 'For saving prompting results, please set the dev_out argument as "<dataset>-dev-prompting-output.txt"'
-	assert args.test_out.endswith("test-prompting-output.txt"), 'For saving prompting results, please set the test_out argument as "<dataset>-test-prompting-output.txt"'
+	if args.use_attn_mask:
+		dev_prefix = args.dev_out.split("-dev-")[0]
+		test_prefix = args.test_out.split("-test-")[0]
+
+		args.dev_out = f"{dev_prefix}-dev-advanced-output.txt"
+		args.test_out = f"{test_prefix}-test-advanced-output.txt"
+	else:
+		assert args.dev_out.endswith("dev-prompting-output.txt"), 'For saving prompting results, please set the dev_out argument as "<dataset>-dev-prompting-output.txt"'
+		assert args.test_out.endswith("test-prompting-output.txt"), 'For saving prompting results, please set the test_out argument as "<dataset>-test-prompting-output.txt"'
 
 	with torch.no_grad():
-
 		device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
 		#### Load data
 		# create the data and its corresponding datasets and dataloader
@@ -428,6 +447,9 @@ def get_args():
 	parser.add_argument("--hidden_dropout_prob", type=float, default=0.3)
 	parser.add_argument("--lr", type=float, help="learning rate, default lr for 'pretrain': 1e-3, 'finetune': 1e-5",
 						default=2e-5)
+
+	# advanced implementation
+	parser.add_argument("--use_attn_mask", action="store_true", help="enable attention mask during eval")
 
 	args = parser.parse_args()
 	print(f"args: {vars(args)}")

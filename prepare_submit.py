@@ -18,7 +18,7 @@ required_files = {'run_llama.py',
                   'sst-dev-finetuning-output.txt',
                   'sst-test-finetuning-output.txt',
                   'sst-dev-lora-output.txt',
-                  'sst-test-lora-output.txt',  
+                  'sst-test-lora-output.txt',
                   'cfimdb-dev-prompting-output.txt',
                   'cfimdb-test-prompting-output.txt',
                   'cfimdb-dev-finetuning-output.txt',
@@ -60,7 +60,7 @@ def check_file(file: str, check_aid: str):
     required_files -= inside_files
     combined_files = required_files | optional_files
     combined_files -= inside_files
-      
+
     assert len(required_files) == 0, f"Some required files are missing: {required_files}"
     # --
     assert target_prefix[:-1] == check_aid, f"AndrewID mismatched: {target_prefix[:-1]} vs {check_aid}"
@@ -68,7 +68,7 @@ def check_file(file: str, check_aid: str):
     print(f"And it contains the following files: {sorted(list(inside_files))}")
     # -- OPTIONAL CHECK --
     if len(combined_files) not in [4, 0]:
-        
+
         warnings.warn(f"[Optional check] Some of your advanced outputs are missing: {combined_files}")
     # --
 
@@ -80,7 +80,7 @@ def main(path: str, aid: str):
                 if '.git' in root or '__pycache__' in root:
                     continue  # ignore some parts
                 for file in files:
-                    if file.endswith(".zip"):
+                    if file.endswith(".zip") or file.endswith(".pt"):
                         continue
                     ff = os.path.join(root, file)
                     rpath = os.path.relpath(ff, path)

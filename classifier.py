@@ -19,9 +19,9 @@ class LlamaZeroShotClassifier(torch.nn.Module):
         self.tokenizer = tokenizer
         self.label_name_ids = [tokenizer.encode(label, bos=False, eos=False) for label in label_names]
 
-    def forward(self, input_ids):
+    def forward(self, input_ids, attention_mask=None):
 		# compute the completion probability of each label string
-        logits, _ = self.llama(input_ids)
+        logits, _ = self.llama(input_ids, attention_mask=attention_mask)
         log_probabilities = F.log_softmax(logits, dim=-1)
         label_probabilities = torch.zeros((log_probabilities.shape[0], self.num_labels), device=log_probabilities.device)
         for i, label_token_ids in enumerate(self.label_name_ids):
@@ -44,7 +44,7 @@ class LlamaEmbeddingClassifier(torch.nn.Module):
         self.dropout = torch.nn.Dropout(config.hidden_dropout_prob)
         self.classifier_head = torch.nn.Linear(self.llama.config.dim, self.num_labels)
 
-    def forward(self, input_ids):
+    def forward(self, input_ids, attention_mask=None):
         '''
 	    1) Find the hidden state after the final token of the input sequence
         2) Apply dropout (self.dropout) to the hidden state at training time to mitigate
@@ -54,11 +54,11 @@ class LlamaEmbeddingClassifier(torch.nn.Module):
         3) Take the log-softmax of the logits and return log-probabilities over all classes.
         '''
         # todo
-        _, hidden_states = self.llama(input_ids)   # batch, seq_len, hidden_dim
+        _, hidden_states = self.llama(input_ids, attention_mask=attention_mask)   # batch, seq_len, hidden_dim
 
         # 1) Get the last hidden state
         last_hidden = hidden_states[:, -1, :]      # batch, hidden_dim
-        
+
         # 2) Apply dropout
         last_hidden = self.dropout(last_hidden)
 
