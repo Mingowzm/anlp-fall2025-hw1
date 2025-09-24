@@ -32,7 +32,7 @@ class LayerNorm(torch.nn.Module):
 
     def _norm(self, x):
         """
-        Compute layer normalization by subtracting the mean and dividing by 
+        Compute layer normalization by subtracting the mean and dividing by
         the standard deviation along the last dimension. Use the standard
         LayerNorm formula: (x - mean) / sqrt(variance + eps)
 
@@ -43,7 +43,10 @@ class LayerNorm(torch.nn.Module):
             torch.Tensor: The normalized tensor.
         """
         # todo
-        raise NotImplementedError
+        mean = x.mean(dim=-1, keepdim=True)
+        var = x.var(dim=-1, unbiased=False, keepdim=True)
+        out = (x - mean) / torch.sqrt(var + self.eps)
+        return out
 
     def forward(self, x):
         """
@@ -58,7 +61,7 @@ class LayerNorm(torch.nn.Module):
         """
         output = self._norm(x.float()).type_as(x)
         return output * self.weight + self.bias
-    
+
 
 class Attention(nn.Module):
     def __init__(self, config: LlamaConfig):
@@ -94,7 +97,10 @@ class Attention(nn.Module):
         attention matrix before applying it to the value tensor.
         '''
         # todo
-        raise NotImplementedError
+        attn_scores = torch.matmul(query, key.transpose(-2, -1)) * 1.0 / math.sqrt(query.size(-1))
+        attn_weights = self.attn_dropout(F.softmax(attn_scores, dim=-1))
+        output = torch.matmul(attn_weights, value)
+        return output
 
     def forward(
         self,
@@ -197,7 +203,17 @@ class LlamaLayer(nn.Module):
            output of the feed-forward network
         '''
         # todo
-        raise NotImplementedError
+        # 1) norm + attention
+        norm = self.attention_norm(x)
+        attn_out = self.attention(norm)
+        x = x + attn_out
+
+        # 2) norm + feedforward
+        norm = self.ffn_norm(x)
+        ff_out = self.feed_forward(norm)
+        x = x + ff_out
+
+        return x
 
 class Llama(LlamaPreTrainedModel):
     def __init__(self, config: LlamaConfig):
@@ -261,10 +277,10 @@ class Llama(LlamaPreTrainedModel):
         """
         Take a conditioning sequence of indices idx (LongTensor of shape (b,t)) and complete
         the sequence max_new_tokens times, feeding the predictions back into the model each time.
-        We perform this generation using basic temperature sampling with epsilon sampling (i.e. 
-        filtering out tokens with probability below the epsilon threshold at each timestep). 
-        Most likely you'll want to make sure to be in model.eval() mode of operation for this. 
-        Also note this is a super inefficient version of sampling with no key/value cache, 
+        We perform this generation using basic temperature sampling with epsilon sampling (i.e.
+        filtering out tokens with probability below the epsilon threshold at each timestep).
+        Most likely you'll want to make sure to be in model.eval() mode of operation for this.
+        Also note this is a super inefficient version of sampling with no key/value cache,
         but you are free to add any optimizations on top of this.
         """
         for _ in range(max_new_tokens):
@@ -274,11 +290,10 @@ class Llama(LlamaPreTrainedModel):
             logits, _ = self(idx_cond)
             logits = logits[:, -1, :] # crop to just the final time step
             # todo
-            raise NotImplementedError
-            
+
             if temperature == 0.0:
                 # select the single most likely index
-                idx_next = None
+                idx_next = torch.argmax(logits, dim=-1, keepdim=True)
             else:
                 '''
                 Perform temperature sampling with epsilon sampling:
@@ -288,10 +303,14 @@ class Llama(LlamaPreTrainedModel):
                 4) Renormalize the filtered probabilities so they sum to 1.
                 5) Sample from this filtered probability distribution.
                 '''
-                idx_next = None
+                probs = F.softmax(logits / temperature, dim=-1)
+                mask = probs >= epsilon
+                probs = probs * mask
+                probs = probs / probs.sum(dim=-1, keepdim=True)
+                idx_next = torch.multinomial(probs, num_samples=1)
             # append sampled index to the running sequence and continue
             idx = torch.cat((idx, idx_next), dim=1)
-        
+
         return idx
 
 def load_pretrained(checkpoint):

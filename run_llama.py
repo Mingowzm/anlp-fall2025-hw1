@@ -130,17 +130,17 @@ def save_model(model, optimizer, args, config, filepath):
 
 	torch.save(save_info, filepath)
 	print(f"save the model to {filepath}")
- 
+
 def save_lora_model(model, optimizer, args, config, filepath, merge_weights=True):
     """
     Save LoRA model with option to merge weights back to standard format.
     """
     if merge_weights:
         print("Merging LoRA weights back into original model...")
-        
+
         merged_model = copy.deepcopy(model)
         merged_model = merge_lora_weights(merged_model)
-        
+
         # Save the merged model (now it's a standard model)
         save_model(merged_model, optimizer, args, config, filepath)
         print(f"Saved merged model to {filepath}")
@@ -218,7 +218,7 @@ def train(args):
 def train_lora(args):
 	"""Train with LoRA fine-tuning."""
 	device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
-	
+
 	#### Load data
 	tokenizer = Tokenizer(args.max_sentence_len)
 	train_data, num_labels = create_data(args.train, tokenizer, 'train')
@@ -243,22 +243,22 @@ def train_lora(args):
 
 	# initialize the Sentence Classification Model
 	model = LlamaEmbeddingClassifier(config)
-	
+
 	# Apply LoRA to the Llama backbone
 	print(f"Applying LoRA with rank={args.lora_rank}, alpha={args.lora_alpha}")
 	model.llama = apply_lora(model.llama, rank=args.lora_rank, alpha=args.lora_alpha)
-	
+
 	lora_params, total_params, percentage = count_lora_parameters(model)
-	
+
 	model = model.to(device)
 
 	# Only optimize LoRA parameters and classifier head
 	lora_params = get_lora_optimizer_params(model)
 	classifier_params = list(model.classifier_head.parameters())
 	trainable_params = lora_params + classifier_params
-	
+
 	print(f"Training {len(trainable_params)} parameter groups (LoRA + classifier)")
-	
+
 	lr = args.lr
 	optimizer = AdamW(trainable_params, lr=lr)
 	best_dev_acc = 0
@@ -375,33 +375,33 @@ def test(args):
         'For saving results, please set the dev_out argument as "<dataset>-dev-finetuning-output.txt" or "<dataset>-dev-lora-output.txt"'
     assert args.test_out.endswith("test-finetuning-output.txt") or args.test_out.endswith("test-lora-output.txt"), \
         'For saving results, please set the test_out argument as "<dataset>-test-finetuning-output.txt" or "<dataset>-test-lora-output.txt"'
-    
+
     with torch.no_grad():
         device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
-        saved = torch.load(args.filepath)
+        saved = torch.load(args.filepath, weights_only=False)
         config = saved['model_config']
         model = LlamaEmbeddingClassifier(config)
         model.load_state_dict(saved['model'])
         model = model.to(device)
         print(f"load model from {args.filepath}")
-        
+
         tokenizer = Tokenizer(args.max_sentence_len)
         dev_data = create_data(args.dev, tokenizer, 'valid')
         dev_dataset = LlamaDataset(dev_data, args)
-        dev_dataloader = DataLoader(dev_dataset, shuffle=False, batch_size=args.batch_size, 
+        dev_dataloader = DataLoader(dev_dataset, shuffle=False, batch_size=args.batch_size,
                                    collate_fn=dev_dataset.collate_fn)
 
         test_data = create_data(args.test, tokenizer, 'test')
         test_dataset = LlamaDataset(test_data, args)
-        test_dataloader = DataLoader(test_dataset, shuffle=False, batch_size=args.batch_size, 
+        test_dataloader = DataLoader(test_dataset, shuffle=False, batch_size=args.batch_size,
                                     collate_fn=test_dataset.collate_fn)
 
         dev_acc, dev_f1, dev_pred, dev_true, dev_sents = model_eval(dev_dataloader, model, device)
         test_acc, test_f1, test_pred, test_true, test_sents = model_eval(test_dataloader, model, device)
-    
+
         write_predictions_to_file("dev", args.dev_out, dev_acc, dev_pred, dev_sents)
         write_predictions_to_file("test", args.test_out, test_acc, test_pred, test_sents)
-        
+
 def get_args():
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--train", type=str, default="data/cfimdb-train.txt")
@@ -456,7 +456,7 @@ if __name__ == "__main__":
 		# Step 4
 		# Evaluate your model on the dev and test sets
 		test(args)
-  
+
 	elif args.option == "lora":
 		# Step 5
 		# LoRA fine-tuning - parameter efficient training
