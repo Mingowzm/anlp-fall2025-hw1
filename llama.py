@@ -278,7 +278,14 @@ class Llama(LlamaPreTrainedModel):
             logits = self.output(h)
         else:
             # inference-time mini-optimization: only forward the output on the very last position
-            logits = self.output(h[:, [-1], :]) # note: using list [-1] to preserve the time dim
+            if attention_mask is not None:
+                # if an attention mask is provided, we cannot assume that the last token is the one we want to predict
+                token_counts = attention_mask.sum(dim=1)
+                last_indices = token_counts - 2 # -2 to get the index of the last token
+                batch_indices = torch.arange(_batch_size, device=h.device)
+                logits = self.output(h[batch_indices, last_indices].unsqueeze(1))
+            else:
+                logits = self.output(h[:, [-1], :]) # note: using list [-1] to preserve the time dim
 
         return logits, h
 
